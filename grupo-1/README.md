@@ -3,7 +3,7 @@
 ## Nombre del Grupo: [ClimaTech]
 
 ## Integrantes:
-1. [Cinthia Santos]
+1. [Cynthia Santos]
 2. [Jose Ignacio]
 3. [Matias Arroyo]
 4. [Fabian Miranda]
