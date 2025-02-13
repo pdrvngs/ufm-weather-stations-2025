@@ -1,2 +1,10 @@
-# Grupo 1
-This is the README for Grupo 1 project.
+# Proyecto: Estaciones de Clima
+
+## Nombre del Grupo: [ClimaTech]
+
+## Integrantes:
+1. [Cinthia Santos]
+2. [Jose Ignacio]
+3. [Matias Arroyo]
+4. [Fabian Miranda]
+
