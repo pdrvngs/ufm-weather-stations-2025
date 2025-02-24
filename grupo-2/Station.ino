@@ -6,8 +6,7 @@ BMP280_DEV bmp280;
 
 // Photoresistor, light sensor
 const int photoPin1 = 32;
-const int photoPin2 = 34;
-const int photoPin3 = 35;
+const int photoPin2 = 35;
 
 // DHT11, Humidity and Temperature Sensor
 #include "DHT.h"
@@ -28,14 +27,15 @@ const char* ssid = "Philip";
 const char* pass = "simedas100pesos";
 
 const bool verbose = true;
-const bool wifi = true;
+const bool wifi = false;
 
 //Firebase (database)
 #include<Firebase_ESP_Client.h>
 #include<addons/TokenHelper.h>
 //#include<addons/RTDHelper.h>
 
-#define API_KEY "AIzaSyD1r37EmwHCUYTmzbr-TZDqc0tOyia9vzI"
+#define API_KEY "API"
+//"AIzaSyD1r37EmwHCUYTmzbr-TZDqc0tOyia9vzI"
 
 #define USER_EMAIL "philipfalla@ufm.edu"
 #define USER_PASSWORD "philip1234"
@@ -187,10 +187,8 @@ String readLS() {
   Serial.print(LL1);
   int LL2 = analogRead(photoPin2);
   Serial.print(LL2);
-  int LL3 = analogRead(photoPin3);
-  Serial.print(LL3);
 
-  int lightLevel = max(LL1, max(LL2, LL3));
+  int lightLevel = max(LL1, LL2);
   Serial.print(lightLevel);
 
   if (verbose) {
