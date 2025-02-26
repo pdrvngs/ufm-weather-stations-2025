@@ -1,3 +1,8 @@
+//MAC Address del esp32 "88:13:bf:6f:d1:e4"
+const String MacAddress = "MAC";
+
+#include <cmath>
+
 //BMP280, atmospheric sensor
 #include <BMP280_DEV.h>
 
@@ -7,6 +12,8 @@ BMP280_DEV bmp280;
 // Photoresistor, light sensor
 const int photoPin1 = 32;
 const int photoPin2 = 35;
+
+bool once = true;
 
 // DHT11, Humidity and Temperature Sensor
 #include "DHT.h"
@@ -22,12 +29,22 @@ const int motorPin = 33;  // GPIO33 (D33) en ESP32
 
 //Wifi
 #include <WiFi.h>
+//Time
+#include <NTPClient.h>
+#include <WiFiUdp.h>
 
 const char* ssid = "Philip";
 const char* pass = "simedas100pesos";
 
+//const char* ssid = "Ama-gi";
+//const char* pass = NULL;
+
+// Initialize NTPClient
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org", -21600, 60000); // UTC-6 (Guatemala timezone)
+
 const bool verbose = true;
-const bool wifi = false;
+const bool wifi = true;
 
 //Firebase (database)
 #include<Firebase_ESP_Client.h>
@@ -49,7 +66,6 @@ FirebaseConfig config;
 void setup() {
   Serial.begin(115200);
   delay(1000);
-  Serial.println("🔄 Setup is running...");
   
   bmp280.begin(BMP280_I2C_ALT_ADDR);
   bmp280.setTimeStandby(TIME_STANDBY_500MS);
@@ -62,12 +78,20 @@ void setup() {
     int attempts = 0;
     while (WiFi.status() != WL_CONNECTED && attempts < 100) {  
       delay(100);
-      Serial.print(".");
+      if(verbose){
+        Serial.print(".");
+      }
       attempts++;
     }
 
     if(WiFi.status() == WL_CONNECTED) {
-      Serial.println("\n✅ Connected to WiFi");
+      if(verbose){
+        Serial.println("\n✅ Connected to WiFi");
+      }
+
+      //get time
+      timeClient.begin();
+      timeClient.update();
       
       // Firebase Initialization
       config.api_key = API_KEY;
@@ -82,125 +106,179 @@ void setup() {
 
       Firebase.begin(&config, &auth);
     } else {
-      Serial.println("\n❌ WiFi Connection Failed! Restarting...");
+      if(verbose){
+        Serial.println("\n❌ WiFi Connection Failed! Restarting...");
+      }
       ESP.restart();
     }
   }
-
-  Serial.println("✅ Setup complete. Sensors ready.");
+  if(verbose){
+    Serial.println("✅ Setup complete. Sensors ready.");
+  }
 }
 
-/*Send to Firebase
-void sendToFirebase(String data) {
-  FirebaseJson json;
+void sendToFirebase(String t, float temp, float humid, float pres, float alt, float wind, float light) {
+  if (Firebase.ready()) {
+      FirebaseJson Time;
+      FirebaseJson Data;
+      /*
+      (Not used anymore)
+      FirebaseJson DHT;
+      FirebaseJson BMP;
+      FirebaseJson Nemo;
+      FirebaseJson Light;*/
 
-      // Parse the data string and structure it into JSON
-  json.set("BMP280/Presion", pressure);
-  json.set("BMP280/Altitud", altitude);
-  json.set("LDR/NivelDeLuz", max(analogRead(photoPin1), max(analogRead(photoPin2), analogRead(photoPin3))));
-  json.set("DHT11/Humedad", dht.readHumidity());
-  json.set("DHT11/Temperatura", dht.readTemperature());
+      // Populate DHT11 JSON (Temperature & Humidity)
+      Data.set("Temperature", temp);
+      Data.set("Humidity", humid);
 
-  float radius = 61.5 / 1000.0;  // Convert mm to meters
-  float Kv = 1333.3;
-  int lecture = analogRead(motorPin);
-  float voltage = lecture * (3.3 / 4095.0);
-  float velocity = radius * ((Kv * voltage * (2 * PI)) / 60.0);
+      // Populate BMP280 JSON (Pressure & Altitude)
+      Data.set("Pressure", pres);
+      Data.set("Altitude", alt);
 
-  json.set("Anemometer/Voltaje", voltage);
-  json.set("Anemometer/VelocidadAire", velocity);
+      // Populate Anemometer JSON (Wind Speed)
+      Data.set("Wind Speed", wind);
 
-      // Send JSON to Firebase
-  if (Firebase.RTDB.setJSON(&fbdo, "/weatherData", json)) {
-    Serial.println("✅ Data sent successfully!");
-  } else {
-  Serial.println("❌ Error sending data: " + fbdo.errorReason());
-  }
-}*/
+      // Populate Light Sensor JSON (Light Level)
+      Data.set("Light Level", light);
 
-void sendToFirebase(String data) {
-    if (Firebase.ready()) {
-        FirebaseJson json;
-        json.set("rawData", data);
+      /*
+      // Main Data JSON containing all sensor readings (not used anymore)
+      Data.set("DHT11", DHT);
+      Data.set("BMP280", BMP);
+      Data.set("Anemometer", Nemo);
+      Data.set("Light Sensor", Light);
+      */
 
-        // Print JSON data before sending
+      // Assign Data JSON inside Time JSON using timestamp as key
+      Time.set(t, Data);
+
+      // Print JSON before sending
+      if(verbose){
         Serial.print("📄 JSON Data: ");
         String jsonStr;
-        json.toString(jsonStr, true); // Convert JSON to a string
+        Time.toString(jsonStr, true);  // Convert JSON to a string
         Serial.println(jsonStr);
+      }
 
-        // Send JSON to Firebase
-        if (Firebase.RTDB.setJSON(&fbdo, "/weatherData", &json)) {
-            Serial.println("✅ Data sent successfully!");
-        } else {
-            Serial.print("❌ Error sending data. HTTP Code: ");
-            Serial.print(fbdo.httpCode());
-            Serial.print(" | Reason: ");
-            Serial.println(fbdo.errorReason());
+      // Send JSON to Firebase
+      if (Firebase.RTDB.setJSON(&fbdo, "/LosMejores", &Time)) { 
+        if(verbose){
+          Serial.println("✅ Data sent successfully!");
         }
-    } else {
-        Serial.println("❌ Firebase not ready.");
+      } else {
+        if(verbose){
+          Serial.print("❌ Error sending data. HTTP Code: ");
+          Serial.print(fbdo.httpCode());
+          Serial.print(" | Reason: ");
+          Serial.println(fbdo.errorReason());
+        }
+      }
+  } else {
+    if(verbose){
+      Serial.println("❌ Firebase not ready.");
     }
+  }
 }
 
-
-
+//Reset whole database
+void resetFirebase() {
+  Firebase.RTDB.deleteNode(&fbdo, "/");
+}
 
 //Print DHT
-String readDHT() {
+float readH() {
   float h = dht.readHumidity();
-  float t = dht.readTemperature();
 
-  if (isnan(h) || isnan(t)) {
+  if (isnan(h)) {
     if (verbose) {
-      Serial.println(F("Failed to read from DHT sensor!"));
+      Serial.println(F("Failed to read humidity from DHT sensor!"));
     }
-    return "Failed to read from DHT sensor!\n";
+    return NULL;
   }
   if (verbose) {
     Serial.print(F("Humedad: "));
     Serial.print(h);
-    Serial.print(F("% Temperatura: "));
+    Serial.print(F(" %"));
+  }
+  return h;
+  //OLD: return String(h) + "% ";
+}
+
+float readT() {
+  float t = dht.readTemperature();
+
+  if (isnan(t)) {
+    if (verbose) {
+      Serial.println(F("Failed to read temperature from DHT sensor!"));
+    }
+    return NULL;
+  }
+  if (verbose) {
+    Serial.print(F("Temperatura: "));
     Serial.print(t);
     Serial.println(F("°C "));
   }
-  return "Humedad: " + String(h) + "%  Temperatura: " + String(t) + "°C\n";
+  return t;
+  //OLD: return String(t) + "°C\n";
 }
 
 //Print BMP280
-String readBMP() {
+float readAlt() {
+  float a = altitude;
+  
   if (verbose) {
-    Serial.print(F("Presión: "));
-    Serial.print(pressure);
-    Serial.print(F("hPa   "));
-
     Serial.print(F("Altitúd: "));
-    Serial.print(altitude);
+    Serial.print(a);
     Serial.println(F("m"));
   }
-  return "Presión: " + String(pressure) + " hPa   Altitud: " + String(altitude) + " m\n";
+  return a;
+  //OLD: return String(a) + " m\n";
 }
 
+float readPr() {
+  float p = pressure;
+  
+  if (verbose) {
+    Serial.print(F("Presión: "));
+    Serial.print(p);
+    Serial.print(F("hPa   "));
+  }
+  return p;
+  //OLD: return String(p) + " hPa";
+}
+
+
 //Print Luz
-String readLS() {
+float readLS() {
+
   int LL1 = analogRead(photoPin1);
-  Serial.print(LL1);
+  if(verbose){
+    Serial.print(LL1);
+  }
+
   int LL2 = analogRead(photoPin2);
+  if(verbose){
   Serial.print(LL2);
+  }
 
   int lightLevel = max(LL1, LL2);
-  Serial.print(lightLevel);
+
+  if(verbose){  
+    Serial.print(lightLevel);
+  }
 
   if (verbose) {
     Serial.print(F("LDR -> Nivel de luz: "));
     Serial.print(lightLevel);
     Serial.println(F(" lux"));
   }
-  return "LDR -> Nivel de luz: " + String(lightLevel) + " lux\n";
+  return float(lightLevel);
+  //OLD: return String(lightLevel) + " lux\n";
 }
 
 //Print Nemomtr
-String readNemo() {
+float readNemo() {
   float radius = 61.5;  // Radio en milímetros
   float Kv = 1333.3;    // Kv en RPM/V
 
@@ -221,32 +299,91 @@ String readNemo() {
     Serial.print(velocity, 2);  // Mostrar con 2 decimales
     Serial.println(" m/s");
   }
-  return "Voltaje: " + String(voltage, 2) + " V  |  Velocidad Aire: " + String(velocity, 2) + " m/s\n";
+  return roundU(velocity);
+}
+
+//round nearest 2 decimales
+float roundU(float x){
+  return round(x * 100.0) / 100.0;
 }
 
 // Función para todo al mismo tiempo
-String readEVRTNG() {
+bool ready() {
   bmp280.startNormalConversion();
   while (!bmp280.getMeasurements(temperature, pressure, altitude)) {
     delay(10);  // Small delay to prevent locking up the ESP32
+    return false;
   }
-  return readBMP() + readLS() + readDHT() + readNemo();
+  return true;
+}
+
+String getFormattedTime() {
+    time_t epochTime = timeClient.getEpochTime();
+    struct tm *ptm = gmtime((time_t *)&epochTime);
+    
+    char timeString[30];
+    snprintf(timeString, sizeof(timeString), "%04d-%02d-%02d %02d:%02d:%02d",
+             ptm->tm_year + 1900, ptm->tm_mon + 1, ptm->tm_mday,
+             ptm->tm_hour, ptm->tm_min, ptm->tm_sec);
+
+    return String(timeString);
+}
+
+bool checkWiFi() {
+  if (WiFi.status() == WL_CONNECTED) {
+    return true; // WiFi ya está conectado
+  }
+
+  if (verbose){
+    Serial.println("⚠️ WiFi desconectado. Intentando reconectar...");
+  }
+
+  WiFi.disconnect();
+  WiFi.reconnect();
+
+  unsigned long startAttemptTime = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 10000) {
+    delay(500);
+    if(verbose){
+      Serial.print(".");
+    }
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    if(verbose){
+      Serial.println("\n✅ WiFi reconectado.");
+    }
+    return true;
+  } else {
+    if(verbose){
+      Serial.println("\n❌ No se pudo reconectar a WiFi.");
+    }
+    return false;
+  }
 }
 
 void loop() {
-  //Serial.println("🔄 Loop is running...");
-  //String str = readEVRTNG();  // Read all sensor data
-
-  Serial.print("Firebase Ready: ");
-  Serial.println(Firebase.ready() ? "✅ Yes" : "❌ No");
-
-  String str = "1... 2... 3... probando.";
-
-  if (verbose) {
-    Serial.println(str);
+  if (!checkWiFi()) {
+    if(verbose){
+      Serial.println("❌ Esperando conexión a WiFi antes de continuar...");
+    }
+    delay(5000);  // Esperar antes de volver a intentarlo
+    return;
   }
-  
-  sendToFirebase(str);  // Send data as JSON to Firebase
 
-  delay(1000);  // Wait 2 seconds before next reading
+  timeClient.update();
+  String TT;
+  
+  if(ready()){
+    TT = getFormattedTime();
+    float Humid = readH();
+    float Temp = readT();
+    float Alt = readAlt();
+    float Pr = readPr();
+    float LS = readLS();
+    float Nemo = readNemo();
+    sendToFirebase(TT, Temp, Humid, Pr, Alt, Nemo, LS); 
+  }
+
+  delay(2000);  // Wait 2 seconds before next reading
 }
